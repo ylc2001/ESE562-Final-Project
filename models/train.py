@@ -191,7 +191,9 @@ def build_ybus_matrix():
         b = branch[4]
 
         z = r + 1j * x
-        y = 1 / z if abs(z) > 1e-10 else 0
+        if abs(z) < 1e-10:
+            raise ValueError(f"Invalid branch impedance (near zero) for branch {fbus+1}-{tbus+1}")
+        y = 1 / z
         b_shunt = 1j * b
 
         # Add to Ybus
@@ -332,14 +334,14 @@ class PowerFlowTrainer:
 
         return self.train_losses, self.val_losses
 
-    def plot_training_history(self, save_path=None):
+    def plot_training_history(self, save_path=None, title='Training History', show=True):
         """Plot training and validation loss curves"""
         plt.figure(figsize=(10, 6))
         plt.plot(self.train_losses, label='Training Loss', linewidth=2)
         plt.plot(self.val_losses, label='Validation Loss', linewidth=2)
         plt.xlabel('Epoch', fontsize=12)
-        plt.ylabel('MSE Loss', fontsize=12)
-        plt.title('Training History', fontsize=14, fontweight='bold')
+        plt.ylabel('Loss', fontsize=12)
+        plt.title(title, fontsize=14, fontweight='bold')
         plt.legend(fontsize=11)
         plt.grid(True, alpha=0.3)
         plt.tight_layout()
@@ -348,7 +350,10 @@ class PowerFlowTrainer:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
             print(f"Training history plot saved to: {save_path}")
 
-        plt.show()
+        if show:
+            plt.show()
+        else:
+            plt.close()
 
 
 def load_data(train_path, val_path, batch_size=64):
@@ -492,27 +497,21 @@ def main():
                     'best_val_loss': trainer.best_val_loss,
                 }, f)
 
-            # Plot training history
+            # Plot training history using the trainer's method
             plot_path = os.path.join(config['save_dir'], plot_filename)
-            plt.figure(figsize=(10, 6))
-            plt.plot(train_losses, label='Training Loss', linewidth=2)
-            plt.plot(val_losses, label='Validation Loss', linewidth=2)
-            plt.xlabel('Epoch', fontsize=12)
-            plt.ylabel('Loss', fontsize=12)
-            plt.title(f'{model_name} with {loss_type} loss', fontsize=14, fontweight='bold')
-            plt.legend(fontsize=11)
-            plt.grid(True, alpha=0.3)
-            plt.tight_layout()
-            plt.savefig(plot_path, dpi=300, bbox_inches='tight')
-            plt.close()
-            print(f"Training history plot saved to: {plot_path}")
+            trainer.plot_training_history(
+                save_path=plot_path,
+                title=f'{model_name} with {loss_type} loss',
+                show=False
+            )
 
             # Store results
+            final_train_loss = train_losses[-1] if len(train_losses) > 0 else None
             all_results[f'{model_name}_{loss_type}'] = {
                 'model_name': model_name,
                 'loss_type': loss_type,
                 'best_val_loss': trainer.best_val_loss,
-                'final_train_loss': train_losses[-1] if train_losses else None,
+                'final_train_loss': final_train_loss,
                 'epochs_trained': len(train_losses)
             }
 
