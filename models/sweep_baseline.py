@@ -8,8 +8,16 @@ Hyperparameters tested:
 - Hidden layer sizes
 - Learning rate
 - Number of epochs
+
+Usage:
+    python sweep_baseline.py [--project PROJECT_NAME] [--data-dir DATA_DIR]
+
+Environment variables:
+    WANDB_PROJECT: wandb project name (default: ese562-baseline-mlp-sweep)
+    DATA_DIR: path to data directory (default: ../data)
 """
 
+import argparse
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -23,6 +31,9 @@ import wandb
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models.mlp_models import BaselineMLP
+
+# Global variable to store data directory path
+_data_dir = None
 
 
 def load_data(train_path, val_path, batch_size=64):
@@ -91,6 +102,8 @@ def validate(model, val_loader, criterion, device):
 
 def train():
     """Main training function for wandb sweep."""
+    global _data_dir
+
     # Initialize wandb run
     run = wandb.init()
 
@@ -100,8 +113,14 @@ def train():
     # Device setup
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    # Data paths
-    data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
+    # Data paths - use global _data_dir if set, otherwise use default
+    if _data_dir is not None:
+        data_dir = _data_dir
+    else:
+        data_dir = os.environ.get(
+            'DATA_DIR',
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
+        )
     train_path = os.path.join(data_dir, 'train_dataset.npz')
     val_path = os.path.join(data_dir, 'val_dataset.npz')
 
@@ -182,25 +201,65 @@ sweep_config = {
 }
 
 
+def get_total_combinations():
+    """Calculate total number of hyperparameter combinations."""
+    hidden_dims_count = len(sweep_config['parameters']['hidden_dims']['values'])
+    lr_count = len(sweep_config['parameters']['learning_rate']['values'])
+    epochs_count = len(sweep_config['parameters']['epochs']['values'])
+    return hidden_dims_count * lr_count * epochs_count
+
+
 def main():
     """Main function to run wandb sweep."""
+    global _data_dir
+
+    parser = argparse.ArgumentParser(
+        description='Run wandb sweep for BaselineMLP hyperparameter tuning'
+    )
+    parser.add_argument(
+        '--project',
+        type=str,
+        default=os.environ.get('WANDB_PROJECT', 'ese562-baseline-mlp-sweep'),
+        help='wandb project name (default: ese562-baseline-mlp-sweep)'
+    )
+    parser.add_argument(
+        '--data-dir',
+        type=str,
+        default=os.environ.get(
+            'DATA_DIR',
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
+        ),
+        help='path to data directory containing train_dataset.npz and val_dataset.npz'
+    )
+    args = parser.parse_args()
+
+    # Set global data directory
+    _data_dir = args.data_dir
+
+    # Calculate total combinations for grid search
+    total_combinations = get_total_combinations()
+
     print("=" * 60)
     print("BASELINE MLP HYPERPARAMETER SWEEP")
     print("Using wandb sweep with standard MSE loss")
+    print("=" * 60)
+    print(f"Project: {args.project}")
+    print(f"Data directory: {args.data_dir}")
+    print(f"Total hyperparameter combinations: {total_combinations}")
     print("=" * 60)
 
     # Initialize sweep
     sweep_id = wandb.sweep(
         sweep_config,
-        project="ese562-baseline-mlp-sweep"
+        project=args.project
     )
 
     print(f"\nSweep ID: {sweep_id}")
     print("Starting sweep agent...")
 
-    # Run sweep agent
-    # This will run train() for each combination of hyperparameters
-    wandb.agent(sweep_id, function=train)
+    # Run sweep agent with count limit for grid search
+    # This ensures all combinations are run exactly once
+    wandb.agent(sweep_id, function=train, count=total_combinations)
 
     print("\n" + "=" * 60)
     print("SWEEP COMPLETED!")
