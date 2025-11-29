@@ -213,3 +213,6 @@ __marimo__/
 # custom
 models/checkpoints
 *.npz
+
+# wandb
+wandb/
